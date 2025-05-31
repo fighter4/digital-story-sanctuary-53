@@ -1,7 +1,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useEbook, EbookFile } from '@/contexts/EbookContext';
-import ePub from 'epub.js';
+import ePub from 'epubjs';
 
 interface EpubReaderProps {
   file: EbookFile;
