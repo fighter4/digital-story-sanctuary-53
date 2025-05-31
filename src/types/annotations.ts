@@ -10,6 +10,7 @@ export interface Annotation {
     page?: number; // for PDF
     line?: number; // for TXT
     offset?: number; // character offset for TXT
+    percentage?: number; // reading progress percentage
   };
   color: string;
   createdAt: Date;
