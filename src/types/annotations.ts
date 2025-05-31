@@ -23,6 +23,7 @@ export interface ReadingProgress {
     cfi?: string;
     page?: number;
     line?: number;
+    offset?: number; // character offset for TXT
     percentage: number;
   };
   totalReadingTime: number; // in minutes
