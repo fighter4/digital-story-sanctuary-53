@@ -1,12 +1,13 @@
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useEbook } from '@/contexts/EbookContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { Search, Filter, X } from 'lucide-react';
+import { Search, X } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { extractTextFromFile } from '@/utils/textExtraction';
 
 interface SearchResult {
   id: string;
@@ -16,6 +17,7 @@ interface SearchResult {
     cfi?: string;
     page?: number;
     line?: number;
+    offset?: number;
   };
   matchCount: number;
 }
@@ -28,6 +30,78 @@ export const SearchPanel = () => {
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [wholeWords, setWholeWords] = useState(false);
+  const [fullText, setFullText] = useState('');
+  const [isExtracted, setIsExtracted] = useState(false);
+
+  useEffect(() => {
+    if (currentFile && !isExtracted) {
+      extractFileText();
+    }
+  }, [currentFile]);
+
+  const extractFileText = async () => {
+    if (!currentFile) return;
+
+    try {
+      const result = await extractTextFromFile(currentFile.file, currentFile.type);
+      if (result.success) {
+        setFullText(result.text);
+        setIsExtracted(true);
+      } else {
+        console.error('Failed to extract text:', result.error);
+        toast({
+          title: "Text extraction failed",
+          description: "Search may be limited",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('Error extracting text:', error);
+    }
+  };
+
+  const performSearch = (text: string, query: string): SearchResult[] => {
+    if (!query.trim()) return [];
+
+    const flags = caseSensitive ? 'g' : 'gi';
+    const searchPattern = wholeWords ? `\\b${query}\\b` : query;
+    const regex = new RegExp(searchPattern, flags);
+    
+    const results: SearchResult[] = [];
+    const lines = text.split('\n');
+    
+    lines.forEach((line, lineIndex) => {
+      const matches = [...line.matchAll(new RegExp(searchPattern, flags))];
+      
+      matches.forEach((match, matchIndex) => {
+        const contextStart = Math.max(0, match.index! - 50);
+        const contextEnd = Math.min(line.length, match.index! + match[0].length + 50);
+        const context = line.slice(contextStart, contextEnd);
+        
+        // Calculate approximate page for different file types
+        let page = 1;
+        if (currentFile?.type === 'txt') {
+          page = Math.floor(lineIndex / 30) + 1; // Assuming 30 lines per page
+        } else if (currentFile?.type === 'pdf') {
+          page = Math.floor(lineIndex / 50) + 1; // Rough estimate for PDF
+        }
+
+        results.push({
+          id: `${lineIndex}-${matchIndex}`,
+          text: match[0],
+          context: `...${context}...`,
+          position: {
+            line: lineIndex + 1,
+            page,
+            offset: match.index
+          },
+          matchCount: 1
+        });
+      });
+    });
+
+    return results;
+  };
 
   const handleSearch = async () => {
     if (!searchQuery.trim() || !currentFile) return;
@@ -39,29 +113,34 @@ export const SearchPanel = () => {
         setSearchHistory(prev => [searchQuery, ...prev.slice(0, 9)]);
       }
 
-      // Simulate enhanced search with multiple results
-      const mockResults: SearchResult[] = [
-        {
-          id: '1',
-          text: searchQuery,
-          context: `This is an enhanced search result containing "${searchQuery}" with better context and highlighting capabilities.`,
-          position: { page: 1 },
-          matchCount: 3
-        },
-        {
-          id: '2',
-          text: searchQuery,
-          context: `Another occurrence of "${searchQuery}" found in a different section of the book with more detailed context.`,
-          position: { page: 5 },
-          matchCount: 2
-        }
-      ];
+      let searchText = fullText;
       
-      setSearchResults(mockResults);
+      // If we don't have extracted text, try to get visible text
+      if (!searchText) {
+        const readerElement = document.querySelector('[data-reader-content]') as HTMLElement || 
+                              document.querySelector('.epub-container') as HTMLElement ||
+                              document.querySelector('pre') as HTMLElement;
+        
+        if (readerElement) {
+          searchText = readerElement.textContent || '';
+        }
+      }
+
+      if (!searchText) {
+        toast({
+          title: "No content to search",
+          description: "Could not access book content for searching",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      const results = performSearch(searchText, searchQuery);
+      setSearchResults(results);
       
       toast({
         title: "Search completed",
-        description: `Found ${mockResults.length} results for "${searchQuery}"`
+        description: `Found ${results.length} results for "${searchQuery}"`
       });
     } catch (error) {
       console.error('Search error:', error);
@@ -89,10 +168,9 @@ export const SearchPanel = () => {
   const highlightText = (text: string, query: string) => {
     if (!query) return text;
     
-    const regex = new RegExp(
-      `(${query})`, 
-      caseSensitive ? 'g' : 'gi'
-    );
+    const flags = caseSensitive ? 'g' : 'gi';
+    const searchPattern = wholeWords ? `\\b${query}\\b` : query;
+    const regex = new RegExp(`(${searchPattern})`, flags);
     
     return text.split(regex).map((part, index) => 
       regex.test(part) ? (
@@ -103,6 +181,28 @@ export const SearchPanel = () => {
         part
       )
     );
+  };
+
+  const handleResultClick = (result: SearchResult) => {
+    // Try to navigate to the result position
+    if (result.position.page && currentFile?.type === 'pdf') {
+      // For PDF, we could emit an event or use a callback to navigate
+      const event = new CustomEvent('navigate-to-page', { 
+        detail: { page: result.position.page } 
+      });
+      window.dispatchEvent(event);
+    } else if (result.position.line && currentFile?.type === 'txt') {
+      // For TXT, navigate to line
+      const event = new CustomEvent('navigate-to-line', { 
+        detail: { line: result.position.line } 
+      });
+      window.dispatchEvent(event);
+    }
+    
+    toast({
+      title: "Navigation",
+      description: `Attempting to navigate to ${currentFile?.type === 'pdf' ? 'page' : 'line'} ${result.position.page || result.position.line}`
+    });
   };
 
   if (!currentFile) {
@@ -119,6 +219,11 @@ export const SearchPanel = () => {
         <div className="flex items-center gap-2 mb-4">
           <Search className="w-4 h-4" />
           <h3 className="font-semibold">Search</h3>
+          {!isExtracted && currentFile.type !== 'txt' && (
+            <Badge variant="outline" className="text-xs">
+              Extracting...
+            </Badge>
+          )}
         </div>
         
         <div className="flex gap-2">
@@ -200,7 +305,11 @@ export const SearchPanel = () => {
                 Found {searchResults.length} results
               </div>
               {searchResults.map((result) => (
-                <div key={result.id} className="border rounded-lg p-3 hover:bg-accent cursor-pointer">
+                <div 
+                  key={result.id} 
+                  className="border rounded-lg p-3 hover:bg-accent cursor-pointer transition-colors"
+                  onClick={() => handleResultClick(result)}
+                >
                   <div className="font-medium text-sm mb-1">
                     {highlightText(`"${result.text}"`, searchQuery)}
                   </div>
@@ -213,7 +322,7 @@ export const SearchPanel = () => {
                       {result.position.line && `Line ${result.position.line}`}
                     </span>
                     <Badge variant="outline" className="text-xs">
-                      {result.matchCount} matches
+                      Click to navigate
                     </Badge>
                   </div>
                 </div>
