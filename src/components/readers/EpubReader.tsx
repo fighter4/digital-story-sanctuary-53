@@ -1,6 +1,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useEbook, EbookFile } from '@/contexts/EbookContext';
+import { useAnnotations } from '@/contexts/AnnotationContext';
 import ePub from 'epubjs';
 
 interface EpubReaderProps {
@@ -9,6 +10,7 @@ interface EpubReaderProps {
 
 export const EpubReader = ({ file }: EpubReaderProps) => {
   const { preferences } = useEbook();
+  const { updateProgress, startSession, endSession } = useAnnotations();
   const viewerRef = useRef<HTMLDivElement>(null);
   const [book, setBook] = useState<any>(null);
   const [rendition, setRendition] = useState<any>(null);
@@ -29,6 +31,19 @@ export const EpubReader = ({ file }: EpubReaderProps) => {
         await newRendition.display();
         setBook(newBook);
         setRendition(newRendition);
+
+        // Start reading session
+        startSession(file.id);
+
+        // Track location changes for progress
+        newRendition.on('relocated', (location: any) => {
+          const percentage = Math.round(location.start.percentage * 100);
+          updateProgress(file.id, {
+            cfi: location.start.cfi,
+            percentage
+          });
+        });
+
       } catch (error) {
         console.error('Error loading EPUB:', error);
       }
@@ -40,6 +55,7 @@ export const EpubReader = ({ file }: EpubReaderProps) => {
       if (rendition) {
         rendition.destroy();
       }
+      endSession();
     };
   }, [file]);
 
@@ -62,13 +78,38 @@ export const EpubReader = ({ file }: EpubReaderProps) => {
     }
   }, [rendition, preferences]);
 
+  const handlePrevPage = () => {
+    if (rendition) {
+      rendition.prev();
+    }
+  };
+
+  const handleNextPage = () => {
+    if (rendition) {
+      rendition.next();
+    }
+  };
+
   return (
-    <div className="flex-1 overflow-hidden">
+    <div className="flex-1 overflow-hidden relative">
       <div 
         ref={viewerRef} 
         className="w-full h-full"
-        style={{ height: 'calc(100vh - 4rem)' }}
+        style={{ height: 'calc(100vh - 8rem)' }}
       />
+      
+      {/* Navigation overlay */}
+      <div className="absolute inset-0 flex pointer-events-none">
+        <div 
+          className="w-1/3 h-full cursor-pointer pointer-events-auto"
+          onClick={handlePrevPage}
+        />
+        <div className="w-1/3 h-full" />
+        <div 
+          className="w-1/3 h-full cursor-pointer pointer-events-auto"
+          onClick={handleNextPage}
+        />
+      </div>
     </div>
   );
 };
