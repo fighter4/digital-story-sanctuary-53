@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useState } from 'react';
 import { useEbook, EbookFile } from '@/contexts/EbookContext';
 import { useAnnotations } from '@/contexts/AnnotationContext';
@@ -7,8 +6,11 @@ import { Input } from '@/components/ui/input';
 import { ChevronLeft, ChevronRight, Search, ZoomIn, ZoomOut } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 
-// Set up PDF.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+// Set up PDF.js worker - using a more reliable approach for Vite
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.js',
+  import.meta.url
+).toString();
 
 interface PdfReaderProps {
   file: EbookFile;
@@ -25,19 +27,32 @@ export const PdfReader = ({ file }: PdfReaderProps) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [pageInput, setPageInput] = useState('1');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!canvasRef.current || !file.file) return;
 
     const loadPdf = async () => {
       try {
+        setLoading(true);
+        setError(null);
+        console.log('Loading PDF file...');
+        
         const arrayBuffer = await file.file.arrayBuffer();
+        console.log('PDF ArrayBuffer loaded, size:', arrayBuffer.byteLength);
+        
         const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        console.log('PDF document loaded, pages:', pdf.numPages);
+        
         setPdfDoc(pdf);
         setTotalPages(pdf.numPages);
-        renderPage(pdf, 1);
+        await renderPage(pdf, 1);
+        setLoading(false);
       } catch (error) {
         console.error('Error loading PDF:', error);
+        setError(`Failed to load PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        setLoading(false);
       }
     };
 
@@ -45,7 +60,7 @@ export const PdfReader = ({ file }: PdfReaderProps) => {
   }, [file]);
 
   useEffect(() => {
-    if (pdfDoc && currentPage) {
+    if (pdfDoc && currentPage && !loading) {
       renderPage(pdfDoc, currentPage);
       // Update reading progress
       const percentage = Math.round((currentPage / totalPages) * 100);
@@ -54,23 +69,38 @@ export const PdfReader = ({ file }: PdfReaderProps) => {
         percentage
       });
     }
-  }, [currentPage, scale, pdfDoc, totalPages, file.id, updateProgress]);
+  }, [currentPage, scale, pdfDoc, totalPages, file.id, updateProgress, loading]);
 
   const renderPage = async (pdf: any, pageNum: number) => {
     if (!canvasRef.current) return;
 
-    const page = await pdf.getPage(pageNum);
-    const canvas = canvasRef.current;
-    const context = canvas.getContext('2d');
-    
-    const viewport = page.getViewport({ scale });
-    canvas.height = viewport.height;
-    canvas.width = viewport.width;
+    try {
+      console.log('Rendering page:', pageNum);
+      const page = await pdf.getPage(pageNum);
+      const canvas = canvasRef.current;
+      const context = canvas.getContext('2d');
+      
+      if (!context) {
+        console.error('Could not get canvas context');
+        return;
+      }
+      
+      const viewport = page.getViewport({ scale });
+      canvas.height = viewport.height;
+      canvas.width = viewport.width;
 
-    await page.render({
-      canvasContext: context,
-      viewport: viewport
-    }).promise;
+      console.log('Canvas dimensions:', canvas.width, 'x', canvas.height);
+
+      await page.render({
+        canvasContext: context,
+        viewport: viewport
+      }).promise;
+      
+      console.log('Page rendered successfully');
+    } catch (error) {
+      console.error('Error rendering page:', error);
+      setError(`Failed to render page: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   };
 
   const goToPage = (pageNum: number) => {
@@ -127,6 +157,35 @@ export const PdfReader = ({ file }: PdfReaderProps) => {
         return { backgroundColor: '#ffffff', filter: 'none' };
     }
   };
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
+          <p>Loading PDF...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="text-center text-red-600">
+          <p className="text-lg font-medium mb-2">Error loading PDF</p>
+          <p className="text-sm">{error}</p>
+          <Button 
+            onClick={() => window.location.reload()} 
+            className="mt-4"
+            variant="outline"
+          >
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 flex flex-col">
@@ -196,7 +255,7 @@ export const PdfReader = ({ file }: PdfReaderProps) => {
       <div className="flex-1 overflow-auto p-4 flex justify-center">
         <canvas
           ref={canvasRef}
-          className="max-w-full h-auto shadow-lg"
+          className="max-w-full h-auto shadow-lg border"
           style={getThemeStyles()}
         />
       </div>
