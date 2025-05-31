@@ -9,12 +9,18 @@ import { ReadingControls } from "@/components/reading/ReadingControls";
 import { AnnotationPanel } from "@/components/annotations/AnnotationPanel";
 import { SearchPanel } from "@/components/search/SearchPanel";
 import { SettingsPanel } from "@/components/SettingsPanel";
+import { SpeechPanel } from "@/components/reading/SpeechPanel";
+import { NoteTaking } from "@/components/annotations/NoteTaking";
+import { ReadingStats } from "@/components/stats/ReadingStats";
 
 export const MainContent = () => {
   const { currentFile } = useEbook();
   const [showAnnotations, setShowAnnotations] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showSpeech, setShowSpeech] = useState(false);
+  const [showNotes, setShowNotes] = useState(false);
+  const [showStats, setShowStats] = useState(false);
 
   const renderReader = () => {
     if (!currentFile) {
@@ -49,7 +55,19 @@ export const MainContent = () => {
     if (showAnnotations) return <AnnotationPanel />;
     if (showSearch) return <SearchPanel />;
     if (showSettings) return <SettingsPanel />;
+    if (showSpeech) return <SpeechPanel />;
+    if (showNotes) return <NoteTaking />;
+    if (showStats) return <ReadingStats />;
     return null;
+  };
+
+  const closeAllPanels = () => {
+    setShowAnnotations(false);
+    setShowSearch(false);
+    setShowSettings(false);
+    setShowSpeech(false);
+    setShowNotes(false);
+    setShowStats(false);
   };
 
   return (
@@ -59,23 +77,35 @@ export const MainContent = () => {
         <div className="flex-1">
           <ReadingControls
             onToggleAnnotations={() => {
+              closeAllPanels();
               setShowAnnotations(!showAnnotations);
-              setShowSearch(false);
-              setShowSettings(false);
             }}
             onToggleSearch={() => {
+              closeAllPanels();
               setShowSearch(!showSearch);
-              setShowAnnotations(false);
-              setShowSettings(false);
             }}
             onToggleSettings={() => {
+              closeAllPanels();
               setShowSettings(!showSettings);
-              setShowAnnotations(false);
-              setShowSearch(false);
+            }}
+            onToggleSpeech={() => {
+              closeAllPanels();
+              setShowSpeech(!showSpeech);
+            }}
+            onToggleNotes={() => {
+              closeAllPanels();
+              setShowNotes(!showNotes);
+            }}
+            onToggleStats={() => {
+              closeAllPanels();
+              setShowStats(!showStats);
             }}
             showAnnotations={showAnnotations}
             showSearch={showSearch}
             showSettings={showSettings}
+            showSpeech={showSpeech}
+            showNotes={showNotes}
+            showStats={showStats}
           />
         </div>
       </header>
@@ -85,7 +115,7 @@ export const MainContent = () => {
           {renderReader()}
         </div>
         
-        {(showAnnotations || showSearch || showSettings) && (
+        {(showAnnotations || showSearch || showSettings || showSpeech || showNotes || showStats) && (
           <div className="w-80 border-l bg-background">
             {renderSidePanel()}
           </div>

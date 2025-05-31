@@ -4,7 +4,9 @@ import { useEbook } from '@/contexts/EbookContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Search } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Search, Filter, X } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
 
 interface SearchResult {
   id: string;
@@ -15,6 +17,7 @@ interface SearchResult {
     page?: number;
     line?: number;
   };
+  matchCount: number;
 }
 
 export const SearchPanel = () => {
@@ -22,26 +25,51 @@ export const SearchPanel = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [searchHistory, setSearchHistory] = useState<string[]>([]);
+  const [caseSensitive, setCaseSensitive] = useState(false);
+  const [wholeWords, setWholeWords] = useState(false);
 
   const handleSearch = async () => {
     if (!searchQuery.trim() || !currentFile) return;
 
     setIsSearching(true);
     try {
-      // For now, we'll implement a basic search simulation
-      // In a real implementation, this would search through the actual book content
+      // Add to search history
+      if (!searchHistory.includes(searchQuery)) {
+        setSearchHistory(prev => [searchQuery, ...prev.slice(0, 9)]);
+      }
+
+      // Simulate enhanced search with multiple results
       const mockResults: SearchResult[] = [
         {
           id: '1',
           text: searchQuery,
-          context: `This is a sample context containing ${searchQuery} for demonstration purposes.`,
-          position: { page: 1 }
+          context: `This is an enhanced search result containing "${searchQuery}" with better context and highlighting capabilities.`,
+          position: { page: 1 },
+          matchCount: 3
+        },
+        {
+          id: '2',
+          text: searchQuery,
+          context: `Another occurrence of "${searchQuery}" found in a different section of the book with more detailed context.`,
+          position: { page: 5 },
+          matchCount: 2
         }
       ];
       
       setSearchResults(mockResults);
+      
+      toast({
+        title: "Search completed",
+        description: `Found ${mockResults.length} results for "${searchQuery}"`
+      });
     } catch (error) {
       console.error('Search error:', error);
+      toast({
+        title: "Search failed",
+        description: "An error occurred while searching.",
+        variant: "destructive"
+      });
     } finally {
       setIsSearching(false);
     }
@@ -51,6 +79,30 @@ export const SearchPanel = () => {
     if (e.key === 'Enter') {
       handleSearch();
     }
+  };
+
+  const clearSearch = () => {
+    setSearchQuery('');
+    setSearchResults([]);
+  };
+
+  const highlightText = (text: string, query: string) => {
+    if (!query) return text;
+    
+    const regex = new RegExp(
+      `(${query})`, 
+      caseSensitive ? 'g' : 'gi'
+    );
+    
+    return text.split(regex).map((part, index) => 
+      regex.test(part) ? (
+        <mark key={index} className="bg-yellow-200 px-1 rounded">
+          {part}
+        </mark>
+      ) : (
+        part
+      )
+    );
   };
 
   if (!currentFile) {
@@ -63,20 +115,32 @@ export const SearchPanel = () => {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="p-4 border-b">
+      <div className="p-4 border-b space-y-4">
         <div className="flex items-center gap-2 mb-4">
           <Search className="w-4 h-4" />
           <h3 className="font-semibold">Search</h3>
         </div>
         
         <div className="flex gap-2">
-          <Input
-            placeholder="Search in book..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyPress={handleKeyPress}
-            className="flex-1"
-          />
+          <div className="flex-1 relative">
+            <Input
+              placeholder="Search in book..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyPress={handleKeyPress}
+              className="pr-8"
+            />
+            {searchQuery && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="absolute right-1 top-1 h-6 w-6 p-0"
+                onClick={clearSearch}
+              >
+                <X className="w-3 h-3" />
+              </Button>
+            )}
+          </div>
           <Button 
             onClick={handleSearch}
             disabled={isSearching || !searchQuery.trim()}
@@ -85,6 +149,43 @@ export const SearchPanel = () => {
             {isSearching ? 'Searching...' : 'Search'}
           </Button>
         </div>
+
+        <div className="flex items-center gap-2 text-xs">
+          <Button
+            variant={caseSensitive ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setCaseSensitive(!caseSensitive)}
+            className="h-6 text-xs"
+          >
+            Aa
+          </Button>
+          <Button
+            variant={wholeWords ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setWholeWords(!wholeWords)}
+            className="h-6 text-xs"
+          >
+            Whole Words
+          </Button>
+        </div>
+
+        {searchHistory.length > 0 && (
+          <div>
+            <div className="text-xs text-muted-foreground mb-2">Recent searches:</div>
+            <div className="flex flex-wrap gap-1">
+              {searchHistory.slice(0, 5).map((term, index) => (
+                <Badge
+                  key={index}
+                  variant="secondary"
+                  className="cursor-pointer text-xs hover:bg-accent"
+                  onClick={() => setSearchQuery(term)}
+                >
+                  {term}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <ScrollArea className="flex-1">
@@ -95,13 +196,25 @@ export const SearchPanel = () => {
             </div>
           ) : (
             <div className="space-y-3">
+              <div className="text-sm text-muted-foreground mb-3">
+                Found {searchResults.length} results
+              </div>
               {searchResults.map((result) => (
                 <div key={result.id} className="border rounded-lg p-3 hover:bg-accent cursor-pointer">
-                  <div className="font-medium text-sm mb-1">"{result.text}"</div>
-                  <div className="text-sm text-muted-foreground mb-2">{result.context}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {result.position.page && `Page ${result.position.page}`}
-                    {result.position.line && `Line ${result.position.line}`}
+                  <div className="font-medium text-sm mb-1">
+                    {highlightText(`"${result.text}"`, searchQuery)}
+                  </div>
+                  <div className="text-sm text-muted-foreground mb-2">
+                    {highlightText(result.context, searchQuery)}
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>
+                      {result.position.page && `Page ${result.position.page}`}
+                      {result.position.line && `Line ${result.position.line}`}
+                    </span>
+                    <Badge variant="outline" className="text-xs">
+                      {result.matchCount} matches
+                    </Badge>
                   </div>
                 </div>
               ))}

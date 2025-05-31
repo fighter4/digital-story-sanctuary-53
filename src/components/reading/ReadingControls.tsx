@@ -4,24 +4,36 @@ import { useAnnotations } from '@/contexts/AnnotationContext';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
-import { Bookmark, Search, Settings } from 'lucide-react';
+import { Bookmark, Search, Settings, Volume2, PenTool, BarChart3 } from 'lucide-react';
 
 interface ReadingControlsProps {
   onToggleAnnotations: () => void;
   onToggleSearch: () => void;
   onToggleSettings: () => void;
+  onToggleSpeech: () => void;
+  onToggleNotes: () => void;
+  onToggleStats: () => void;
   showAnnotations: boolean;
   showSearch: boolean;
   showSettings: boolean;
+  showSpeech: boolean;
+  showNotes: boolean;
+  showStats: boolean;
 }
 
 export const ReadingControls = ({
   onToggleAnnotations,
   onToggleSearch,
   onToggleSettings,
+  onToggleSpeech,
+  onToggleNotes,
+  onToggleStats,
   showAnnotations,
   showSearch,
-  showSettings
+  showSettings,
+  showSpeech,
+  showNotes,
+  showStats
 }: ReadingControlsProps) => {
   const { currentFile } = useEbook();
   const { getProgress, getAnnotationsForFile } = useAnnotations();
@@ -75,6 +87,30 @@ export const ReadingControls = ({
                 {annotations.length}
               </Badge>
             )}
+          </Button>
+
+          <Button
+            variant={showNotes ? 'default' : 'ghost'}
+            size="sm"
+            onClick={onToggleNotes}
+          >
+            <PenTool className="w-4 h-4" />
+          </Button>
+
+          <Button
+            variant={showSpeech ? 'default' : 'ghost'}
+            size="sm"
+            onClick={onToggleSpeech}
+          >
+            <Volume2 className="w-4 h-4" />
+          </Button>
+
+          <Button
+            variant={showStats ? 'default' : 'ghost'}
+            size="sm"
+            onClick={onToggleStats}
+          >
+            <BarChart3 className="w-4 h-4" />
           </Button>
 
           <Button
