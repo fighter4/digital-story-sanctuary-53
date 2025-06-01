@@ -27,10 +27,10 @@ export const EpubReader = ({ file }: EpubReaderProps) => {
         const arrayBuffer = await file.file.arrayBuffer();
         const newBook = ePub(arrayBuffer);
         
-        // Get container dimensions
+        // Get container dimensions and scale them up for better rendering
         const container = viewerRef.current!;
-        const containerWidth = container.offsetWidth;
-        const containerHeight = container.offsetHeight;
+        const containerWidth = container.offsetWidth * 2; // Double the width for 50% scale
+        const containerHeight = container.offsetHeight * 2; // Double the height for 50% scale
         
         const newRendition = newBook.renderTo(viewerRef.current!, {
           width: containerWidth,
@@ -63,8 +63,8 @@ export const EpubReader = ({ file }: EpubReaderProps) => {
         // Handle resize to maintain proper scaling
         const handleResize = () => {
           if (newRendition && viewerRef.current) {
-            const newWidth = viewerRef.current.offsetWidth;
-            const newHeight = viewerRef.current.offsetHeight;
+            const newWidth = viewerRef.current.offsetWidth * 2;
+            const newHeight = viewerRef.current.offsetHeight * 2;
             newRendition.resize(newWidth, newHeight);
           }
         };
@@ -132,7 +132,9 @@ export const EpubReader = ({ file }: EpubReaderProps) => {
             height: '100%',
             width: '100%',
             maxWidth: '100%',
-            maxHeight: '100%'
+            maxHeight: '100%',
+            transform: 'scale(0.5)',
+            transformOrigin: 'top left'
           }}
         />
         
