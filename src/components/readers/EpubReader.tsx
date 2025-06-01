@@ -26,11 +26,18 @@ export const EpubReader = ({ file }: EpubReaderProps) => {
       try {
         const arrayBuffer = await file.file.arrayBuffer();
         const newBook = ePub(arrayBuffer);
+        
+        // Get container dimensions
+        const container = viewerRef.current!;
+        const containerWidth = container.offsetWidth;
+        const containerHeight = container.offsetHeight;
+        
         const newRendition = newBook.renderTo(viewerRef.current!, {
-          width: '100%',
-          height: '100%',
+          width: containerWidth,
+          height: containerHeight,
           spread: 'none',
-          flow: 'paginated'
+          flow: 'paginated',
+          allowScriptedContent: false
         });
 
         await newRendition.display();
@@ -52,6 +59,21 @@ export const EpubReader = ({ file }: EpubReaderProps) => {
           setCanGoPrev(!location.atStart);
           setCanGoNext(!location.atEnd);
         });
+
+        // Handle resize to maintain proper scaling
+        const handleResize = () => {
+          if (newRendition && viewerRef.current) {
+            const newWidth = viewerRef.current.offsetWidth;
+            const newHeight = viewerRef.current.offsetHeight;
+            newRendition.resize(newWidth, newHeight);
+          }
+        };
+
+        window.addEventListener('resize', handleResize);
+        
+        return () => {
+          window.removeEventListener('resize', handleResize);
+        };
 
       } catch (error) {
         console.error('Error loading EPUB:', error);
@@ -100,16 +122,17 @@ export const EpubReader = ({ file }: EpubReaderProps) => {
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full relative">
+    <div className="flex-1 flex flex-col h-full max-h-full overflow-hidden">
       {/* EPUB Content Container */}
-      <div className="flex-1 relative overflow-hidden">
+      <div className="flex-1 relative overflow-hidden bg-white">
         <div 
           ref={viewerRef} 
-          className="w-full h-full"
+          className="w-full h-full max-w-full max-h-full overflow-hidden"
           style={{ 
-            height: 'calc(100vh - 12rem)',
+            height: '100%',
+            width: '100%',
             maxWidth: '100%',
-            margin: '0 auto'
+            maxHeight: '100%'
           }}
         />
         
@@ -130,7 +153,7 @@ export const EpubReader = ({ file }: EpubReaderProps) => {
       </div>
       
       {/* Navigation Controls */}
-      <div className="flex justify-between items-center p-4 border-t bg-background">
+      <div className="flex justify-between items-center p-4 border-t bg-background flex-shrink-0">
         <Button
           variant="outline"
           size="sm"
