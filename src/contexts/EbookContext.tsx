@@ -1,21 +1,20 @@
+// src/contexts/EbookContext.tsx
 import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
-import { ReadingProgress } from '@/types/annotations'; // Assuming ReadingProgress might be used for lastReadAt
+import { TocItem } from '@/types/toc'; // Import the new TocItem interface
 
 // --- Enhanced EbookFile Interface ---
 export interface EbookFile {
   id: string;
-  name: string; // Original filename, can be used as default title
+  name: string; 
   type: 'epub' | 'pdf' | 'txt';
-  file: File; // The actual file object
+  file: File; 
   addedAt: Date;
-  // --- New metadata fields ---
-  title?: string; // Editable title
+  title?: string; 
   author?: string;
   genre?: string;
-  coverImageUrl?: string; // URL for a cover image
-  lastReadAt?: Date; // For "sort by recently read"
-  // --- Fields for collections (deferred for now, but good to keep in mind) ---
-  // collectionIds?: string[]; 
+  coverImageUrl?: string; 
+  lastReadAt?: Date; 
+  toc?: TocItem[]; // Added Table of Contents
 }
 
 export interface ReadingPreferences {
@@ -30,16 +29,12 @@ interface EbookContextType {
   currentFile: EbookFile | null;
   preferences: ReadingPreferences;
   addFile: (file: File) => void;
-  removeFile: (ids: string | string[]) => void; // Modified to accept array for bulk delete
+  removeFile: (ids: string | string[]) => void;
   setCurrentFile: (file: EbookFile | null) => void;
   updatePreferences: (prefs: Partial<ReadingPreferences>) => void;
-  updateFileMetadata: (id: string, metadata: Partial<Omit<EbookFile, 'id' | 'file' | 'type'>>) => void;
-  // --- Future collection methods (deferred) ---
-  // createCollection: (name: string) => string;
-  // deleteCollection: (id: string) => void;
-  // addBookToCollection: (fileId: string, collectionId: string) => void;
-  // removeBookFromCollection: (fileId: string, collectionId: string) => void;
-  // getCollections: () => Collection[]; // Define Collection interface if needed
+  updateFileMetadata: (id: string, metadata: Partial<Omit<EbookFile, 'id' | 'file' | 'type' | 'toc'>>) => void;
+  updateCurrentFileToc: (toc: TocItem[]) => void; // New function to update TOC for current file
+  updateLastReadTimestamp: (fileId: string) => void; // Added for completeness from previous plan
 }
 
 const EbookContext = createContext<EbookContextType | undefined>(undefined);
@@ -52,40 +47,30 @@ export const useEbook = () => {
   return context;
 };
 
-// Helper to attempt to extract initial metadata (very basic)
 const extractInitialMetadata = async (file: File): Promise<Partial<EbookFile>> => {
     const metadata: Partial<EbookFile> = {
-        title: file.name.replace(/\.[^/.]+$/, "") // Default title from filename
+        title: file.name.replace(/\.[^/.]+$/, "") 
     };
-    // Basic author extraction from filename (e.g., "Author - Title.epub")
     const nameParts = file.name.split(' - ');
     if (nameParts.length > 1) {
         metadata.author = nameParts[0].trim();
         metadata.title = nameParts.slice(1).join(' - ').replace(/\.[^/.]+$/, "").trim();
     }
-    // For EPUB, more advanced parsing could be done here if epubjs is used during addFile
-    // For PDF, pdfjs-dist could be used similarly.
-    // This is kept simple for now.
     return metadata;
 };
 
 
 export const EbookProvider = ({ children }: { children: ReactNode }) => {
   const [files, setFiles] = useState<EbookFile[]>(() => {
-    // Load files from localStorage if available
     const savedFiles = localStorage.getItem('ebookFiles');
     if (savedFiles) {
-      const parsedFiles = JSON.parse(savedFiles) as Array<Omit<EbookFile, 'file' | 'addedAt' | 'lastReadAt'> & { addedAt: string, lastReadAt?: string, fileDataUrl?: string }>;
+      const parsedFiles = JSON.parse(savedFiles) as Array<Omit<EbookFile, 'file' | 'addedAt' | 'lastReadAt' | 'toc'> & { addedAt: string, lastReadAt?: string, toc?: TocItem[] }>;
       return parsedFiles.map(f => ({
         ...f,
-        // Reconstruct File object if needed (complex, placeholder for now)
-        // For simplicity, we'll assume File objects are not persisted directly in localStorage
-        // and would need to be re-selected or handled via a persistent storage solution like IndexedDB.
-        // This example will lose the actual `File` object on reload if not handled.
-        // A common pattern is to store file metadata and a reference (e.g., IndexedDB key) to the actual file blob.
-        file: new File([], f.name, { type: `application/${f.type}` }), // Placeholder File
+        file: new File([], f.name, { type: `application/${f.type}` }), 
         addedAt: new Date(f.addedAt),
         lastReadAt: f.lastReadAt ? new Date(f.lastReadAt) : undefined,
+        toc: f.toc || [], // Initialize toc
       }));
     }
     return [];
@@ -102,13 +87,9 @@ export const EbookProvider = ({ children }: { children: ReactNode }) => {
     };
   });
 
-  // Save files and preferences to localStorage
   useEffect(() => {
-    // For localStorage, we can't store the File object directly.
-    // A more robust solution would use IndexedDB for file storage.
-    // This is a simplified version that stores metadata.
     const storableFiles = files.map(f => {
-        const { file, ...meta } = f; // Exclude 'file' object
+        const { file, ...meta } = f; 
         return meta;
     });
     localStorage.setItem('ebookFiles', JSON.stringify(storableFiles));
@@ -133,16 +114,16 @@ export const EbookProvider = ({ children }: { children: ReactNode }) => {
     const initialMeta = await extractInitialMetadata(file);
 
     const newFile: EbookFile = {
-      id: Date.now().toString() + '-' + Math.random().toString(36).substring(2,9), // More unique ID
-      name: file.name, // Original filename
+      id: Date.now().toString() + '-' + Math.random().toString(36).substring(2,9),
+      name: file.name,
       type,
-      file, // Store the actual File object
+      file, 
       addedAt: new Date(),
-      lastReadAt: new Date(), // Set lastReadAt to addedAt initially
+      lastReadAt: new Date(),
       title: initialMeta.title || file.name.replace(/\.[^/.]+$/, ""),
       author: initialMeta.author || "Unknown Author",
       genre: "Unknown Genre",
-      // coverImageUrl: initialMeta.coverImageUrl // If you implement cover extraction
+      toc: [], // Initialize with empty TOC
     };
 
     setFiles(prev => [...prev, newFile]);
@@ -160,19 +141,27 @@ export const EbookProvider = ({ children }: { children: ReactNode }) => {
     setPreferences(prev => ({ ...prev, ...prefs }));
   };
 
-  const updateFileMetadata = (id: string, metadata: Partial<Omit<EbookFile, 'id' | 'file' | 'type'>>) => {
+  const updateFileMetadata = (id: string, metadata: Partial<Omit<EbookFile, 'id' | 'file' | 'type' | 'toc'>>) => {
     setFiles(prevFiles => 
       prevFiles.map(file => 
         file.id === id ? { ...file, ...metadata, name: metadata.title || file.name } : file
       )
     );
-    // If the current file is being updated, update its state too
     if (currentFile?.id === id) {
         setCurrentFile(prevCurrent => prevCurrent ? { ...prevCurrent, ...metadata, name: metadata.title || prevCurrent.name } : null);
     }
   };
   
-  // Function to update lastReadAt (example, call this from AnnotationContext or reader components)
+  const updateCurrentFileToc = (toc: TocItem[]) => {
+    if (currentFile) {
+      const updatedFile = { ...currentFile, toc };
+      setCurrentFile(updatedFile);
+      setFiles(prevFiles => 
+        prevFiles.map(f => f.id === currentFile.id ? updatedFile : f)
+      );
+    }
+  };
+
   const updateLastReadTimestamp = (fileId: string) => {
     setFiles(prevFiles =>
       prevFiles.map(file =>
@@ -184,6 +173,7 @@ export const EbookProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+
   return (
     <EbookContext.Provider value={{
       files,
@@ -193,9 +183,12 @@ export const EbookProvider = ({ children }: { children: ReactNode }) => {
       removeFile,
       setCurrentFile,
       updatePreferences,
-      updateFileMetadata
+      updateFileMetadata,
+      updateCurrentFileToc, // Provide the new function
+      updateLastReadTimestamp,
     }}>
       {children}
     </EbookContext.Provider>
   );
 };
+
