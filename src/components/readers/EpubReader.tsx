@@ -5,40 +5,41 @@ import { useAnnotations } from '@/contexts/AnnotationContext';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import ePub, { NavItem } from 'epubjs'; // Import NavItem for TOC typing
-import { TocItem } from '@/types/toc'; // Import TocItem
+import ePub, { NavItem } from 'epubjs';
+import { TocItem } from '@/types/toc';
 
 interface EpubReaderProps {
   file: EbookFile;
-  requestNavigation: (location: string | number) => void; // Callback for TOC navigation
+  // requestNavigation prop is not strictly needed if using global events,
+  // but kept for potential future direct communication.
+  requestNavigation?: (location: string | number) => void; 
 }
 
-export const EpubReader = ({ file, requestNavigation }: EpubReaderProps) => {
-  const { preferences, updateCurrentFileToc } = useEbook();
+export const EpubReader = ({ file }: EpubReaderProps) => {
+  // Correctly destructure currentFile from useEbook
+  const { preferences, updateCurrentFileToc, currentFile } = useEbook(); 
   const { updateProgress, startSession, endSession, addAnnotation } = useAnnotations();
   const viewerRef = useRef<HTMLDivElement>(null);
-  const bookRef = useRef<any>(null); // To store the ePub book instance
-  const renditionRef = useRef<any>(null); // To store the rendition instance
+  const bookRef = useRef<any>(null);
+  const renditionRef = useRef<any>(null);
 
   const [canGoPrev, setCanGoPrev] = useState(false);
   const [canGoNext, setCanGoNext] = useState(true);
-  const [currentProgress, setCurrentProgress] = useState(0);
+  const [currentProgressState, setCurrentProgressState] = useState(0); // Renamed to avoid conflict
   const [isLoading, setIsLoading] = useState(true);
 
-
-  // Function to transform epubjs NavItem to our TocItem structure
   const transformNavItemsToToc = (navItems: NavItem[]): TocItem[] => {
     return navItems.map((item: NavItem) => ({
-      id: item.id || item.href, // Ensure an id
+      id: item.id || item.href,
       label: item.label.trim(),
       href: item.href,
       subitems: item.subitems ? transformNavItemsToToc(item.subitems) : [],
     }));
   };
 
-  // Expose navigation function for TOC panel
   useEffect(() => {
     const handleNavigationRequest = (event: CustomEvent) => {
+      // Use `currentFile` from the hook's scope
       if (event.detail && renditionRef.current && currentFile?.id === file.id) {
          if (typeof event.detail.location === 'string') {
             renditionRef.current.display(event.detail.location);
@@ -47,8 +48,7 @@ export const EpubReader = ({ file, requestNavigation }: EpubReaderProps) => {
     };
     window.addEventListener('navigate-to-epub-location', handleNavigationRequest as EventListener);
     return () => window.removeEventListener('navigate-to-epub-location', handleNavigationRequest as EventListener);
-  }, [file.id, currentFile?.id]);
-
+  }, [file.id, currentFile]); // Depend on `currentFile` object itself
 
   useEffect(() => {
     if (!viewerRef.current || !file.file) return;
@@ -63,8 +63,16 @@ export const EpubReader = ({ file, requestNavigation }: EpubReaderProps) => {
         bookRef.current = newBook;
         
         const container = viewerRef.current!;
-        const containerWidth = container.offsetWidth;
-        const containerHeight = container.offsetHeight;
+        // Ensure container has dimensions before rendering
+        if (container.offsetWidth === 0 || container.offsetHeight === 0) {
+            // Wait for layout or use a fixed size as fallback
+            await new Promise(resolve => setTimeout(resolve, 100)); // Simple delay
+            if (container.offsetWidth === 0 || container.offsetHeight === 0) {
+                console.warn("EPUB container has no dimensions. Reader may not display correctly.");
+            }
+        }
+        const containerWidth = container.offsetWidth || 600; // Fallback width
+        const containerHeight = container.offsetHeight || 800; // Fallback height
         
         newRendition = newBook.renderTo(container, {
           width: containerWidth,
@@ -77,20 +85,19 @@ export const EpubReader = ({ file, requestNavigation }: EpubReaderProps) => {
 
         await newRendition.display();
         
-        // Extract and set TOC
         const navigation = await newBook.loaded.navigation;
         if (navigation && navigation.toc) {
           const toc = transformNavItemsToToc(navigation.toc);
           updateCurrentFileToc(toc);
         } else {
-          updateCurrentFileToc([]); // Set empty TOC if not found
+          updateCurrentFileToc([]);
         }
 
         startSession(file.id);
 
         newRendition.on('relocated', (location: any) => {
           const percentage = Math.round(location.start.percentage * 100);
-          setCurrentProgress(percentage);
+          setCurrentProgressState(percentage);
           updateProgress(file.id, {
             cfi: location.start.cfi,
             percentage
@@ -109,7 +116,7 @@ export const EpubReader = ({ file, requestNavigation }: EpubReaderProps) => {
               content: selectedText,
               position: {
                 cfi: cfiRange,
-                percentage: currentProgress // Use currentProgress state
+                percentage: currentProgressState 
               },
               color: preferences.highlightColor
             });
@@ -132,7 +139,9 @@ export const EpubReader = ({ file, requestNavigation }: EpubReaderProps) => {
       if (renditionRef.current && viewerRef.current) {
         const newWidth = viewerRef.current.offsetWidth;
         const newHeight = viewerRef.current.offsetHeight;
-        renditionRef.current.resize(newWidth, newHeight);
+        if (newWidth > 0 && newHeight > 0) { // Only resize if dimensions are valid
+            renditionRef.current.resize(newWidth, newHeight);
+        }
       }
     };
     window.addEventListener('resize', handleResize);
@@ -142,12 +151,9 @@ export const EpubReader = ({ file, requestNavigation }: EpubReaderProps) => {
       if (renditionRef.current) {
         renditionRef.current.destroy();
       }
-      if (bookRef.current) {
-        // bookRef.current.destroy(); // epubjs book doesn't always have a destroy method
-      }
       endSession();
     };
-  }, [file, updateCurrentFileToc]); // updateCurrentFileToc added to dependencies
+  }, [file, updateCurrentFileToc, startSession, endSession, addAnnotation, preferences.highlightColor, updateProgress]);
 
   useEffect(() => {
     if (renditionRef.current) {
@@ -205,11 +211,11 @@ export const EpubReader = ({ file, requestNavigation }: EpubReaderProps) => {
     <div className={`flex-1 flex flex-col h-full max-h-full overflow-hidden ${getThemeClasses()}`}>
       <div className="px-4 py-2 border-b flex items-center gap-4">
         <span className="text-sm font-medium">Progress:</span>
-        <Progress value={currentProgress} className="flex-1 h-2" />
-        <span className="text-sm text-muted-foreground min-w-[3rem]">{currentProgress}%</span>
+        <Progress value={currentProgressState} className="flex-1 h-2" />
+        <span className="text-sm text-muted-foreground min-w-[3rem]">{currentProgressState}%</span>
       </div>
       <div className="flex-1 relative overflow-hidden">
-        <div ref={viewerRef} className="w-full h-full" />
+        <div ref={viewerRef} className="w-full h-full" data-reader-content /> {/* Added data-reader-content */}
         <div className="absolute inset-0 flex pointer-events-none">
           <div 
             className="w-1/3 h-full cursor-pointer pointer-events-auto hover:bg-black hover:bg-opacity-5 transition-colors"
@@ -240,4 +246,5 @@ export const EpubReader = ({ file, requestNavigation }: EpubReaderProps) => {
     </div>
   );
 };
+
 
