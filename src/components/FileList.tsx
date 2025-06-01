@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useEbook, EbookFile } from "@/contexts/EbookContext";
 import { useAnnotations } from "@/contexts/AnnotationContext"; // For lastReadAt if integrated
@@ -6,6 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Book, FileX, Bookmark, Edit3, Trash2, Filter, ArrowUpDown, CheckCircle, Circle } from "lucide-react";
 import { EditMetadataModal } from './EditMetadataModal'; // Create this component
@@ -399,4 +401,3 @@ export const FileList = () => {
     </div>
   );
 };
-
