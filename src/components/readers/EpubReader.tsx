@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useEbook, EbookFile } from '@/contexts/EbookContext';
 import { useAnnotations } from '@/contexts/AnnotationContext';
 import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import ePub from 'epubjs';
 
@@ -12,12 +13,13 @@ interface EpubReaderProps {
 
 export const EpubReader = ({ file }: EpubReaderProps) => {
   const { preferences } = useEbook();
-  const { updateProgress, startSession, endSession } = useAnnotations();
+  const { updateProgress, startSession, endSession, addAnnotation } = useAnnotations();
   const viewerRef = useRef<HTMLDivElement>(null);
   const [book, setBook] = useState<any>(null);
   const [rendition, setRendition] = useState<any>(null);
   const [canGoPrev, setCanGoPrev] = useState(false);
   const [canGoNext, setCanGoNext] = useState(true);
+  const [currentProgress, setCurrentProgress] = useState(0);
 
   useEffect(() => {
     if (!viewerRef.current || !file.file) return;
@@ -50,6 +52,7 @@ export const EpubReader = ({ file }: EpubReaderProps) => {
         // Track location changes for progress and navigation state
         newRendition.on('relocated', (location: any) => {
           const percentage = Math.round(location.start.percentage * 100);
+          setCurrentProgress(percentage);
           updateProgress(file.id, {
             cfi: location.start.cfi,
             percentage
@@ -58,6 +61,32 @@ export const EpubReader = ({ file }: EpubReaderProps) => {
           // Update navigation state
           setCanGoPrev(!location.atStart);
           setCanGoNext(!location.atEnd);
+        });
+
+        // Handle text selection for highlighting
+        newRendition.on('selected', (cfiRange: string, contents: any) => {
+          const selection = contents.window.getSelection();
+          if (selection && selection.toString().trim()) {
+            const selectedText = selection.toString().trim();
+            
+            // Add highlight annotation
+            addAnnotation({
+              fileId: file.id,
+              type: 'highlight',
+              content: selectedText,
+              position: {
+                cfi: cfiRange,
+                percentage: currentProgress
+              },
+              color: preferences.highlightColor
+            });
+
+            // Apply highlight to the content
+            newRendition.annotations.add('highlight', cfiRange, {}, null, 'highlight-annotation', {
+              'background-color': preferences.highlightColor,
+              'padding': '2px 0'
+            });
+          }
         });
 
         // Handle resize to maintain proper sizing
@@ -109,6 +138,18 @@ export const EpubReader = ({ file }: EpubReaderProps) => {
     }
   }, [rendition, preferences]);
 
+  // Apply theme to the entire reader container
+  const getThemeClasses = () => {
+    switch (preferences.theme) {
+      case 'dark':
+        return 'bg-gray-900 text-white';
+      case 'sepia':
+        return 'bg-amber-50 text-amber-900';
+      default:
+        return 'bg-white text-black';
+    }
+  };
+
   const handlePrevPage = () => {
     if (rendition && canGoPrev) {
       rendition.prev();
@@ -136,9 +177,16 @@ export const EpubReader = ({ file }: EpubReaderProps) => {
   }, [rendition, canGoPrev, canGoNext]);
 
   return (
-    <div className="flex-1 flex flex-col h-full max-h-full overflow-hidden">
+    <div className={`flex-1 flex flex-col h-full max-h-full overflow-hidden ${getThemeClasses()}`}>
+      {/* Progress Bar */}
+      <div className="px-4 py-2 border-b flex items-center gap-4">
+        <span className="text-sm font-medium">Progress:</span>
+        <Progress value={currentProgress} className="flex-1 h-2" />
+        <span className="text-sm text-muted-foreground min-w-[3rem]">{currentProgress}%</span>
+      </div>
+
       {/* EPUB Content Container */}
-      <div className="flex-1 relative overflow-hidden bg-white">
+      <div className="flex-1 relative overflow-hidden">
         <div 
           ref={viewerRef} 
           className="w-full h-full"
@@ -167,7 +215,7 @@ export const EpubReader = ({ file }: EpubReaderProps) => {
       </div>
       
       {/* Navigation Controls - Always visible at bottom */}
-      <div className="flex justify-between items-center p-4 border-t bg-background flex-shrink-0 min-h-[60px]">
+      <div className={`flex justify-between items-center p-4 border-t flex-shrink-0 min-h-[60px] ${getThemeClasses()}`}>
         <Button
           variant="outline"
           size="sm"

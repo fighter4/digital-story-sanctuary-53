@@ -22,6 +22,7 @@ export interface ReadingPreferences {
   fontSize: number;
   theme: 'light' | 'dark' | 'sepia';
   fontFamily: string;
+  highlightColor: string;
 }
 
 interface EbookContextType {
@@ -96,7 +97,8 @@ export const EbookProvider = ({ children }: { children: ReactNode }) => {
     return savedPrefs ? JSON.parse(savedPrefs) : {
       fontSize: 16,
       theme: 'light',
-      fontFamily: 'serif'
+      fontFamily: 'serif',
+      highlightColor: '#ffeb3b'
     };
   });
 
@@ -115,7 +117,6 @@ export const EbookProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     localStorage.setItem('ebookPreferences', JSON.stringify(preferences));
   }, [preferences]);
-
 
   const addFile = async (file: File) => {
     const extension = file.name.split('.').pop()?.toLowerCase();
@@ -182,7 +183,6 @@ export const EbookProvider = ({ children }: { children: ReactNode }) => {
         setCurrentFile(prevCurrent => prevCurrent ? { ...prevCurrent, lastReadAt: new Date() } : null);
     }
   };
-
 
   return (
     <EbookContext.Provider value={{

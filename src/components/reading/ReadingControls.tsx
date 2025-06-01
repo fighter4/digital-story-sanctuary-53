@@ -4,7 +4,7 @@ import { useAnnotations } from '@/contexts/AnnotationContext';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
-import { Bookmark, Search, Settings, Volume2, PenTool, BarChart3 } from 'lucide-react';
+import { Bookmark, Search, Settings, Volume2, PenTool, BarChart3, Highlighter } from 'lucide-react';
 
 interface ReadingControlsProps {
   onToggleAnnotations: () => void;
@@ -13,12 +13,14 @@ interface ReadingControlsProps {
   onToggleSpeech: () => void;
   onToggleNotes: () => void;
   onToggleStats: () => void;
+  onToggleHighlights?: () => void;
   showAnnotations: boolean;
   showSearch: boolean;
   showSettings: boolean;
   showSpeech: boolean;
   showNotes: boolean;
   showStats: boolean;
+  showHighlights?: boolean;
 }
 
 export const ReadingControls = ({
@@ -28,14 +30,16 @@ export const ReadingControls = ({
   onToggleSpeech,
   onToggleNotes,
   onToggleStats,
+  onToggleHighlights,
   showAnnotations,
   showSearch,
   showSettings,
   showSpeech,
   showNotes,
-  showStats
+  showStats,
+  showHighlights
 }: ReadingControlsProps) => {
-  const { currentFile } = useEbook();
+  const { currentFile, preferences } = useEbook();
   const { getProgress, getAnnotationsForFile } = useAnnotations();
 
   if (!currentFile) return null;
@@ -43,10 +47,22 @@ export const ReadingControls = ({
   const progress = getProgress(currentFile.id);
   const annotations = getAnnotationsForFile(currentFile.id);
 
+  // Apply theme to controls
+  const getThemeClasses = () => {
+    switch (preferences.theme) {
+      case 'dark':
+        return 'bg-gray-800 border-gray-700 text-white';
+      case 'sepia':
+        return 'bg-amber-100 border-amber-200 text-amber-900';
+      default:
+        return 'bg-background border-border text-foreground';
+    }
+  };
+
   return (
-    <div className="flex items-center justify-between p-3 border-b bg-background">
+    <div className={`flex items-center justify-between p-3 border-b ${getThemeClasses()}`}>
       <div className="flex items-center gap-2">
-        <div className="text-sm font-medium">{currentFile.name}</div>
+        <div className="text-sm font-medium">{currentFile.title || currentFile.name}</div>
         <Badge variant="secondary" className="text-xs">
           {currentFile.type.toUpperCase()}
         </Badge>
@@ -71,6 +87,16 @@ export const ReadingControls = ({
           >
             <Search className="w-4 h-4" />
           </Button>
+
+          {onToggleHighlights && (
+            <Button
+              variant={showHighlights ? 'default' : 'ghost'}
+              size="sm"
+              onClick={onToggleHighlights}
+            >
+              <Highlighter className="w-4 h-4" />
+            </Button>
+          )}
 
           <Button
             variant={showAnnotations ? 'default' : 'ghost'}
