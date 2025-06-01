@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { ChevronLeft, ChevronRight, Search, ZoomIn, ZoomOut } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
-import { TocItem } from '@/types/toc'; // Import TocItem
+import { TocItem } from '@/types/toc';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.js',
@@ -16,34 +16,46 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 
 interface PdfReaderProps {
   file: EbookFile;
-  requestNavigation: (location: string | number) => void; // Callback for TOC navigation
+  requestNavigation?: (location: string | number) => void;
 }
 
-// Helper to transform PDF outline to TocItem structure
-const transformPdfOutlineToToc = (outline: any[], level = 0): TocItem[] => {
+const transformPdfOutlineToToc = async (pdfDoc: any, outline: any[], level = 0): Promise<TocItem[]> => {
   if (!outline) return [];
-  return outline.map((item: any) => ({
-    id: item.dest && typeof item.dest === 'string' ? item.dest : `${item.title}-${level}-${Math.random()}`, // Ensure ID
-    label: item.title,
-    // For PDF, 'dest' can be a string (named destination) or an array (explicit destination).
-    // Navigation will primarily use page numbers derived later if 'dest' is an array.
-    // If 'dest' is a string, it might need to be resolved to a page number.
-    // For simplicity, we'll primarily rely on page numbers for navigation.
-    // The `navigateToPage` function in PdfReader will handle page number navigation.
-    // We can store the original `dest` if needed for more complex navigation logic later.
-    href: typeof item.dest === 'string' ? item.dest : undefined, // Store named destination if string
-    // Page number will be resolved by the viewer when navigating via outline.
-    // We can try to resolve it here if needed, but pdfjs handles it.
-    subitems: item.items ? transformPdfOutlineToToc(item.items, level + 1) : [],
-  }));
+  
+  const tocItems: TocItem[] = [];
+
+  for (const item of outline) {
+    let pageNumber: number | undefined;
+    if (item.dest) {
+      try {
+        // dest can be a string (named destination) or an array [ref, type, ...args]
+        const destination = await pdfDoc.getDestination(item.dest);
+        if (destination && destination[0]) {
+          pageNumber = (await pdfDoc.getPageIndex(destination[0])) + 1;
+        }
+      } catch (e) {
+        console.warn("Could not resolve PDF destination:", item.dest, e);
+      }
+    }
+
+    const tocItem: TocItem = {
+      id: item.title + '-' + (pageNumber || level) + '-' + Math.random().toString(16).slice(2), // More unique ID
+      label: item.title,
+      href: typeof item.dest === 'string' ? item.dest : undefined, // Store named destination if string
+      pageNumber: pageNumber,
+      subitems: item.items ? await transformPdfOutlineToToc(pdfDoc, item.items, level + 1) : [],
+    };
+    tocItems.push(tocItem);
+  }
+  return tocItems;
 };
 
 
-export const PdfReader = ({ file, requestNavigation }: PdfReaderProps) => {
-  const { preferences, updateCurrentFileToc } = useEbook();
+export const PdfReader = ({ file }: PdfReaderProps) => {
+  const { preferences, updateCurrentFileToc, currentFile } = useEbook(); // Correctly destructure currentFile
   const { updateProgress } = useAnnotations();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const pdfDocRef = useRef<any>(null); // Store pdfDoc instance
+  const pdfDocRef = useRef<any>(null);
   
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
@@ -68,8 +80,10 @@ export const PdfReader = ({ file, requestNavigation }: PdfReaderProps) => {
 
       await page.render({ canvasContext: context, viewport }).promise;
 
-      const percentage = totalPages > 0 ? Math.round((pageNum / totalPages) * 100) : 0;
-       updateProgress(file.id, { page: pageNum, percentage });
+      if (totalPages > 0) { // Ensure totalPages is set before calculating percentage
+        const percentage = Math.round((pageNum / totalPages) * 100);
+        updateProgress(file.id, { page: pageNum, percentage });
+      }
 
     } catch (err) {
       console.error('Error rendering page:', err);
@@ -77,11 +91,13 @@ export const PdfReader = ({ file, requestNavigation }: PdfReaderProps) => {
     }
   }, [scale, totalPages, file.id, updateProgress]);
 
-
   useEffect(() => {
     if (!file.file) return;
     setLoading(true);
     setError(null);
+    setCurrentPage(1); // Reset page on new file
+    setPageInput('1');
+
 
     const loadPdf = async () => {
       try {
@@ -89,38 +105,21 @@ export const PdfReader = ({ file, requestNavigation }: PdfReaderProps) => {
         const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
         pdfDocRef.current = pdf;
         setTotalPages(pdf.numPages);
-        setCurrentPage(1); // Reset to page 1 on new file
-        setPageInput('1');
-
-        // Extract and set TOC
+        
         const outline = await pdf.getOutline();
         if (outline) {
-          const toc = transformPdfOutlineToToc(outline);
-          // We need to resolve destinations to page numbers for PDF TOC items
-          const tocWithPageNumbers = await Promise.all(toc.map(async (item) => {
-            let pageNum: number | undefined;
-            if (item.href && typeof item.href === 'string') { // Named destination
-              try {
-                const dest = await pdf.getDestination(item.href);
-                if (dest && dest[0]) {
-                  pageNum = (await pdf.getPageIndex(dest[0])) + 1;
-                }
-              } catch (e) { console.warn("Could not resolve named destination:", item.href, e); }
-            } else if (Array.isArray(item.href)) { // Explicit destination (already a ref)
-                try {
-                    if(item.href[0]) {
-                         pageNum = (await pdf.getPageIndex(item.href[0])) + 1;
-                    }
-                } catch(e) { console.warn("Could not resolve explicit destination ref:", item.href, e); }
-            }
-            return { ...item, pageNumber: pageNum };
-          }));
-          updateCurrentFileToc(tocWithPageNumbers);
+          const toc = await transformPdfOutlineToToc(pdf, outline);
+          updateCurrentFileToc(toc);
         } else {
           updateCurrentFileToc([]);
         }
         
-        await renderPage(1);
+        // Initial render after totalPages is set
+        if (pdf.numPages > 0) {
+            await renderPage(1);
+        } else {
+            setError("PDF has no pages.");
+        }
         setLoading(false);
       } catch (err) {
         console.error('Error loading PDF:', err);
@@ -131,33 +130,31 @@ export const PdfReader = ({ file, requestNavigation }: PdfReaderProps) => {
 
     loadPdf();
     
-    // Cleanup
     return () => {
-      pdfDocRef.current = null; // Clear ref on unmount or file change
+      pdfDocRef.current = null;
     };
 
-  }, [file, updateCurrentFileToc, renderPage]); // renderPage added as dependency
+  }, [file, updateCurrentFileToc, renderPage]);
 
   useEffect(() => {
-    if (pdfDocRef.current && currentPage && !loading) {
+    if (pdfDocRef.current && currentPage && !loading && totalPages > 0) {
       renderPage(currentPage);
     }
-  }, [currentPage, scale, loading, renderPage]);
+  }, [currentPage, scale, loading, totalPages, renderPage]);
 
 
-  // Expose navigation function for TOC panel
   useEffect(() => {
     const handleNavigationRequest = (event: CustomEvent) => {
+      // Use `currentFile` from the hook's scope
       if (event.detail && pdfDocRef.current && currentFile?.id === file.id) {
-        if (typeof event.detail.location === 'number') { // Expecting page number for PDF
+        if (typeof event.detail.location === 'number') {
             goToPage(event.detail.location);
         }
       }
     };
     window.addEventListener('navigate-to-pdf-location', handleNavigationRequest as EventListener);
     return () => window.removeEventListener('navigate-to-pdf-location', handleNavigationRequest as EventListener);
-  }, [file.id, currentFile?.id]);
-
+  }, [file.id, currentFile]); // Depend on `currentFile`
 
   const goToPage = (pageNum: number) => {
     if (pdfDocRef.current && pageNum >= 1 && pageNum <= totalPages) {
@@ -182,16 +179,30 @@ export const PdfReader = ({ file, requestNavigation }: PdfReaderProps) => {
 
   const getThemeStyles = () => {
     switch (preferences.theme) {
-      case 'dark': return { backgroundColor: '#1a1a1a', filter: 'invert(1) hue-rotate(180deg)' }; // Adjusted for PDF
-      case 'sepia': return { backgroundColor: '#f4f1ea', filter: 'sepia(0.8)' }; // Adjusted for PDF
+      case 'dark': return { backgroundColor: '#1a1a1a', filter: 'invert(1) hue-rotate(180deg)' };
+      case 'sepia': return { backgroundColor: '#f4f1ea', filter: 'sepia(0.8)' };
       default: return { backgroundColor: '#ffffff', filter: 'none' };
     }
   };
   
   const progressPercentage = totalPages > 0 ? Math.round((currentPage / totalPages) * 100) : 0;
 
-  if (loading) { /* ... loading UI ... */ }
-  if (error) { /* ... error UI ... */ }
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        <p className="ml-2">Loading PDF...</p>
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-red-500">
+        <p>Error: {error}</p>
+      </div>
+    );
+  }
+
 
   return (
     <div className="flex-1 flex flex-col h-full max-h-full overflow-hidden">
@@ -223,7 +234,7 @@ export const PdfReader = ({ file, requestNavigation }: PdfReaderProps) => {
 
       {searchResults.length > 0 && ( /* ... search results UI ... */ )}
       
-      <div className="flex-1 overflow-auto p-4 flex justify-center items-start" style={getThemeStyles()}>
+      <div className="flex-1 overflow-auto p-4 flex justify-center items-start" style={getThemeStyles()} data-reader-content> {/* Added data-reader-content */}
         <canvas ref={canvasRef} className="max-w-full h-auto shadow-lg border" />
       </div>
     </div>
