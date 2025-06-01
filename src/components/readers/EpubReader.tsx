@@ -27,10 +27,10 @@ export const EpubReader = ({ file }: EpubReaderProps) => {
         const arrayBuffer = await file.file.arrayBuffer();
         const newBook = ePub(arrayBuffer);
         
-        // Get container dimensions and scale them up for better rendering
+        // Get container dimensions - use actual container size
         const container = viewerRef.current!;
-        const containerWidth = container.offsetWidth * 2; // Double the width for 50% scale
-        const containerHeight = container.offsetHeight * 2; // Double the height for 50% scale
+        const containerWidth = container.offsetWidth;
+        const containerHeight = container.offsetHeight;
         
         const newRendition = newBook.renderTo(viewerRef.current!, {
           width: containerWidth,
@@ -60,11 +60,11 @@ export const EpubReader = ({ file }: EpubReaderProps) => {
           setCanGoNext(!location.atEnd);
         });
 
-        // Handle resize to maintain proper scaling
+        // Handle resize to maintain proper sizing
         const handleResize = () => {
           if (newRendition && viewerRef.current) {
-            const newWidth = viewerRef.current.offsetWidth * 2;
-            const newHeight = viewerRef.current.offsetHeight * 2;
+            const newWidth = viewerRef.current.offsetWidth;
+            const newHeight = viewerRef.current.offsetHeight;
             newRendition.resize(newWidth, newHeight);
           }
         };
@@ -121,41 +121,53 @@ export const EpubReader = ({ file }: EpubReaderProps) => {
     }
   };
 
+  // Handle keyboard navigation
+  useEffect(() => {
+    const handleKeyPress = (event: KeyboardEvent) => {
+      if (event.key === 'ArrowLeft') {
+        handlePrevPage();
+      } else if (event.key === 'ArrowRight') {
+        handleNextPage();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyPress);
+    return () => document.removeEventListener('keydown', handleKeyPress);
+  }, [rendition, canGoPrev, canGoNext]);
+
   return (
     <div className="flex-1 flex flex-col h-full max-h-full overflow-hidden">
       {/* EPUB Content Container */}
       <div className="flex-1 relative overflow-hidden bg-white">
         <div 
           ref={viewerRef} 
-          className="w-full h-full max-w-full max-h-full overflow-hidden"
+          className="w-full h-full"
           style={{ 
             height: '100%',
-            width: '100%',
-            maxWidth: '100%',
-            maxHeight: '100%',
-            transform: 'scale(0.5)',
-            transformOrigin: 'top left'
+            width: '100%'
           }}
         />
         
-        {/* Invisible navigation areas for click navigation */}
+        {/* Click navigation areas */}
         <div className="absolute inset-0 flex pointer-events-none">
           <div 
-            className="w-1/3 h-full cursor-pointer pointer-events-auto"
+            className="w-1/3 h-full cursor-pointer pointer-events-auto hover:bg-black hover:bg-opacity-5 transition-colors"
             onClick={handlePrevPage}
             style={{ opacity: canGoPrev ? 1 : 0.3 }}
+            title="Previous page"
           />
           <div className="w-1/3 h-full" />
           <div 
-            className="w-1/3 h-full cursor-pointer pointer-events-auto"
+            className="w-1/3 h-full cursor-pointer pointer-events-auto hover:bg-black hover:bg-opacity-5 transition-colors"
             onClick={handleNextPage}
             style={{ opacity: canGoNext ? 1 : 0.3 }}
+            title="Next page"
           />
         </div>
       </div>
       
-      {/* Navigation Controls */}
-      <div className="flex justify-between items-center p-4 border-t bg-background flex-shrink-0">
+      {/* Navigation Controls - Always visible at bottom */}
+      <div className="flex justify-between items-center p-4 border-t bg-background flex-shrink-0 min-h-[60px]">
         <Button
           variant="outline"
           size="sm"
@@ -167,8 +179,8 @@ export const EpubReader = ({ file }: EpubReaderProps) => {
           Previous
         </Button>
         
-        <div className="text-sm text-muted-foreground">
-          Click left/right sides of the page or use buttons to navigate
+        <div className="text-sm text-muted-foreground text-center">
+          Click left/right sides of the page, use arrow keys, or these buttons to navigate
         </div>
         
         <Button
