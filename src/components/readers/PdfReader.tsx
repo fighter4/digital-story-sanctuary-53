@@ -8,8 +8,8 @@ import { ChevronLeft, ChevronRight, Search, ZoomIn, ZoomOut } from 'lucide-react
 import * as pdfjsLib from 'pdfjs-dist';
 import { TocItem } from '@/types/toc';
 
-// Use the correct worker path for Vite environments
-pdfjsLib.GlobalWorkerOptions.workerSrc = `/node_modules/pdfjs-dist/build/pdf.worker.min.js`;
+// Use CDN for worker - more reliable across environments
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 interface PdfReaderProps {
   file: EbookFile;
@@ -95,8 +95,13 @@ export const PdfReader = ({ file }: PdfReaderProps) => {
 
     const loadPdf = async () => {
       try {
+        console.log('Starting PDF load process...');
         const arrayBuffer = await file.file.arrayBuffer();
+        console.log('ArrayBuffer created, size:', arrayBuffer.byteLength);
+        
         const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        console.log('PDF loaded successfully, pages:', pdf.numPages);
+        
         pdfDocRef.current = pdf;
         setTotalPages(pdf.numPages);
         
