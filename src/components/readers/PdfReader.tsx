@@ -8,30 +8,28 @@ import { ChevronLeft, ChevronRight, Search, ZoomIn, ZoomOut } from 'lucide-react
 import * as pdfjsLib from 'pdfjs-dist';
 import { TocItem } from '@/types/toc';
 
-// Configure PDF.js worker with fallback
-const configureWorker = () => {
-  // Try local worker first (copied to public directory)
+// Configure PDF.js worker with robust fallback
+const configureWorker = async () => {
   const localWorkerPath = '/pdf.worker.min.js';
-  
-  // Fallback to CDN if local worker fails
   const cdnWorkerPath = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
   
-  // Set the worker source
-  pdfjsLib.GlobalWorkerOptions.workerSrc = localWorkerPath;
+  // Test if local worker is accessible
+  try {
+    const response = await fetch(localWorkerPath, { method: 'HEAD' });
+    if (response.ok) {
+      console.log('Using local PDF.js worker');
+      pdfjsLib.GlobalWorkerOptions.workerSrc = localWorkerPath;
+      return localWorkerPath;
+    }
+  } catch (e) {
+    console.warn('Local worker not accessible, falling back to CDN');
+  }
   
-  console.log(`PDF.js worker configured: ${localWorkerPath}`);
-  console.log(`Fallback worker available: ${cdnWorkerPath}`);
-  
-  return { localWorkerPath, cdnWorkerPath };
+  // Fallback to CDN
+  console.log('Using CDN PDF.js worker');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = cdnWorkerPath;
+  return cdnWorkerPath;
 };
-
-// Initialize worker configuration
-const { cdnWorkerPath } = configureWorker();
-
-interface PdfReaderProps {
-  file: EbookFile;
-  requestNavigation?: (location: string | number) => void;
-}
 
 const transformPdfOutlineToToc = async (pdfDoc: any, outline: any[], level = 0): Promise<TocItem[]> => {
   if (!outline) return [];
@@ -63,6 +61,11 @@ const transformPdfOutlineToToc = async (pdfDoc: any, outline: any[], level = 0):
   return tocItems;
 };
 
+interface PdfReaderProps {
+  file: EbookFile;
+  requestNavigation?: (location: string | number) => void;
+}
+
 export const PdfReader = ({ file }: PdfReaderProps) => {
   const { preferences, updateCurrentFileToc, currentFile } = useEbook();
   const { updateProgress } = useAnnotations();
@@ -77,7 +80,19 @@ export const PdfReader = ({ file }: PdfReaderProps) => {
   const [pageInput, setPageInput] = useState('1');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [workerRetried, setWorkerRetried] = useState(false);
+  const [workerConfigured, setWorkerConfigured] = useState(false);
+
+  // Configure worker on component mount
+  useEffect(() => {
+    configureWorker().then(() => {
+      console.log('PDF.js worker configured successfully');
+      setWorkerConfigured(true);
+    }).catch(err => {
+      console.error('Failed to configure PDF.js worker:', err);
+      setError('Failed to configure PDF reader');
+      setLoading(false);
+    });
+  }, []);
 
   const renderPage = useCallback(async (pageNum: number) => {
     if (!pdfDocRef.current || !canvasRef.current) return;
@@ -105,7 +120,7 @@ export const PdfReader = ({ file }: PdfReaderProps) => {
   }, [scale, totalPages, file.id, updateProgress]);
 
   useEffect(() => {
-    if (!file.file) return;
+    if (!file.file || !workerConfigured) return;
     setLoading(true);
     setError(null);
     setCurrentPage(1);
@@ -139,17 +154,6 @@ export const PdfReader = ({ file }: PdfReaderProps) => {
         setLoading(false);
       } catch (err) {
         console.error('Error loading PDF:', err);
-        
-        // If worker failed and we haven't retried yet, try CDN fallback
-        if (!workerRetried && err instanceof Error && err.message.includes('worker')) {
-          console.log('Local worker failed, trying CDN fallback...');
-          pdfjsLib.GlobalWorkerOptions.workerSrc = cdnWorkerPath;
-          setWorkerRetried(true);
-          // Retry loading
-          loadPdf();
-          return;
-        }
-        
         setError(`Failed to load PDF: ${err instanceof Error ? err.message : 'Unknown error'}`);
         setLoading(false);
       }
@@ -161,7 +165,7 @@ export const PdfReader = ({ file }: PdfReaderProps) => {
       pdfDocRef.current = null;
     };
 
-  }, [file, updateCurrentFileToc, renderPage, workerRetried, cdnWorkerPath]);
+  }, [file, updateCurrentFileToc, renderPage, workerConfigured]);
 
   useEffect(() => {
     if (pdfDocRef.current && currentPage && !loading && totalPages > 0) {
