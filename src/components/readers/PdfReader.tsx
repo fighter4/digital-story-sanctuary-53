@@ -8,8 +8,25 @@ import { ChevronLeft, ChevronRight, Search, ZoomIn, ZoomOut } from 'lucide-react
 import * as pdfjsLib from 'pdfjs-dist';
 import { TocItem } from '@/types/toc';
 
-// Use CDN for worker - more reliable across environments
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+// Configure PDF.js worker with fallback
+const configureWorker = () => {
+  // Try local worker first (copied to public directory)
+  const localWorkerPath = '/pdf.worker.min.js';
+  
+  // Fallback to CDN if local worker fails
+  const cdnWorkerPath = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+  
+  // Set the worker source
+  pdfjsLib.GlobalWorkerOptions.workerSrc = localWorkerPath;
+  
+  console.log(`PDF.js worker configured: ${localWorkerPath}`);
+  console.log(`Fallback worker available: ${cdnWorkerPath}`);
+  
+  return { localWorkerPath, cdnWorkerPath };
+};
+
+// Initialize worker configuration
+const { cdnWorkerPath } = configureWorker();
 
 interface PdfReaderProps {
   file: EbookFile;
@@ -60,6 +77,7 @@ export const PdfReader = ({ file }: PdfReaderProps) => {
   const [pageInput, setPageInput] = useState('1');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [workerRetried, setWorkerRetried] = useState(false);
 
   const renderPage = useCallback(async (pageNum: number) => {
     if (!pdfDocRef.current || !canvasRef.current) return;
@@ -121,6 +139,17 @@ export const PdfReader = ({ file }: PdfReaderProps) => {
         setLoading(false);
       } catch (err) {
         console.error('Error loading PDF:', err);
+        
+        // If worker failed and we haven't retried yet, try CDN fallback
+        if (!workerRetried && err instanceof Error && err.message.includes('worker')) {
+          console.log('Local worker failed, trying CDN fallback...');
+          pdfjsLib.GlobalWorkerOptions.workerSrc = cdnWorkerPath;
+          setWorkerRetried(true);
+          // Retry loading
+          loadPdf();
+          return;
+        }
+        
         setError(`Failed to load PDF: ${err instanceof Error ? err.message : 'Unknown error'}`);
         setLoading(false);
       }
@@ -132,7 +161,7 @@ export const PdfReader = ({ file }: PdfReaderProps) => {
       pdfDocRef.current = null;
     };
 
-  }, [file, updateCurrentFileToc, renderPage]);
+  }, [file, updateCurrentFileToc, renderPage, workerRetried, cdnWorkerPath]);
 
   useEffect(() => {
     if (pdfDocRef.current && currentPage && !loading && totalPages > 0) {
