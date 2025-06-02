@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useEbook, EbookFile } from '@/contexts/EbookContext';
 import { useAnnotations } from '@/contexts/AnnotationContext';
@@ -9,10 +8,8 @@ import { ChevronLeft, ChevronRight, Search, ZoomIn, ZoomOut } from 'lucide-react
 import * as pdfjsLib from 'pdfjs-dist';
 import { TocItem } from '@/types/toc';
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.js',
-  import.meta.url
-).toString();
+// Use the correct worker path for Vite environments
+pdfjsLib.GlobalWorkerOptions.workerSrc = `/node_modules/pdfjs-dist/build/pdf.worker.min.js`;
 
 interface PdfReaderProps {
   file: EbookFile;

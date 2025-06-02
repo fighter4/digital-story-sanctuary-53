@@ -1,12 +1,7 @@
 import * as pdfjsLib from 'pdfjs-dist';
-// Ensure the worker is correctly sourced.
-// pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
-// Using a relative path for Vite, assuming pdf.worker.min.js is in public/ or handled by the build
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.js',
-  import.meta.url
-).toString();
 
+// Use the correct worker path for Vite environments
+pdfjsLib.GlobalWorkerOptions.workerSrc = `/node_modules/pdfjs-dist/build/pdf.worker.min.js`;
 
 export interface TextExtractionResult {
   text: string;
