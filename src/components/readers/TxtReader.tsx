@@ -186,8 +186,8 @@ export const TxtReader = ({ file }: TxtReaderProps) => {
           <span>Line {currentLine + 1} of {totalLines}</span>
           {selectedText && (
             <div className="flex gap-1">
-              <Button onClick={() => handleAddAnnotation('highlight')} size="xs" variant="outline">Highlight</Button>
-              <Button onClick={() => handleAddAnnotation('note')} size="xs" variant="outline">Note</Button>
+              <Button onClick={() => handleAddAnnotation('highlight')} size="sm" variant="outline">Highlight</Button>
+              <Button onClick={() => handleAddAnnotation('note')} size="sm" variant="outline">Note</Button>
             </div>
           )}
         </div>
