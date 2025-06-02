@@ -1,7 +1,10 @@
+// src/utils/textExtraction.ts
 import * as pdfjsLib from 'pdfjs-dist';
 
-// Use CDN for worker by default in utility functions for better reliability
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+// The global workerSrc should be configured once at application startup.
+// For example, in main.tsx or App.tsx, or via the configureWorker function from PdfReader.
+// pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+// The above line should be removed or managed globally.
 
 export interface TextExtractionResult {
   text: string;
@@ -16,11 +19,31 @@ export interface TextExtractionResult {
  * For EPUBs, this is a placeholder and would need a proper EPUB parsing library
  * and likely access to the rendition to get currently visible content or specific chapters.
  * @param file The file object (EPUB, PDF, TXT).
- * @param type The type of the file ('epub', 'pdf', 'txt').
+ * * @param type The type of the file ('epub', 'pdf', 'txt').
  * @returns A promise that resolves to a TextExtractionResult.
  */
 export const extractTextFromFile = async (file: File, type: string): Promise<TextExtractionResult> => {
   try {
+    // Ensure worker is configured before use, if not done globally.
+    // This is a fallback, ideally it's set once.
+    if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+        console.warn("PDF.js workerSrc not set globally, attempting to set fallback for textExtraction.");
+        // Attempt to use the same logic as PdfReader's configureWorker or a simplified version
+        // This is a simplified fallback. A robust solution would share the configureWorker logic.
+        const localWorkerPath = '/pdf.worker.min.js';
+        try {
+            const response = await fetch(localWorkerPath, { method: 'HEAD' });
+            if (response.ok) {
+                pdfjsLib.GlobalWorkerOptions.workerSrc = localWorkerPath;
+            } else {
+                pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+            }
+        } catch (e) {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+        }
+    }
+
+
     switch (type) {
       case 'txt':
         const textContent = await file.text();
@@ -28,39 +51,22 @@ export const extractTextFromFile = async (file: File, type: string): Promise<Tex
         
       case 'pdf':
         const arrayBuffer = await file.arrayBuffer();
-        // It's important to use the `data` property for the arrayBuffer.
         const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
         let fullText = '';
         
-        // Iterate through all pages to extract text for searching.
-        // For very large PDFs, this can be memory and time-intensive.
-        // A more advanced solution for search might involve:
-        // 1. Indexing the PDF content in the background (e.g., using a Web Worker).
-        // 2. Implementing page-by-page search if full extraction is too slow,
-        //    though this makes global search less straightforward.
         for (let i = 1; i <= pdf.numPages; i++) {
           const page = await pdf.getPage(i);
           const textContent = await page.getTextContent();
-          // The `str` property of each item in `textContent.items` contains the text.
           const pageText = textContent.items.map((item: any) => item.str).join(' ');
-          fullText += pageText + '\n'; // Add a newline to separate page content.
+          fullText += pageText + '\n'; 
         }
         
         return { text: fullText, success: true, totalPages: pdf.numPages };
         
       case 'epub':
-        // EPUB text extraction for a full-document search is complex.
-        // It requires unzipping the EPUB, parsing XHTML/HTML content files,
-        // and stripping HTML tags.
-        // A simpler approach for "search visible" would be to extract text
-        // from the currently rendered EPUB content in the reader component.
-        // This placeholder indicates that a full EPUB text extraction for search is not implemented here.
         console.warn("Full text extraction for EPUB search is not fully implemented in this utility. Search may rely on visible content if available.");
-        // Attempt to read as text for a very basic fallback, though this will include HTML.
         try {
             const epubTextContent = await file.text();
-            // This is a naive extraction and will include HTML tags.
-            // A proper EPUB parser would be needed to get clean text.
             return { text: epubTextContent, success: true, error: "EPUB extraction is basic and includes HTML." };
         } catch (epubError) {
             return { text: '', success: false, error: `EPUB file could not be read as text: ${epubError instanceof Error ? epubError.message : String(epubError)}` };
@@ -75,12 +81,8 @@ export const extractTextFromFile = async (file: File, type: string): Promise<Tex
   }
 };
 
-/**
- * Extracts text from currently visible elements within a given container.
- * This is useful for features like "search visible text" or "read visible text".
- * @param element The container HTML element.
- * @returns The extracted visible text, or an empty string if no element or text.
- */
+// extractVisibleText and isElementVisible remain the same
+// ... (rest of the file)
 export const extractVisibleText = (element: HTMLElement | null): string => {
   if (!element) return '';
   
@@ -104,11 +106,6 @@ export const extractVisibleText = (element: HTMLElement | null): string => {
   return text.trim();
 };
 
-/**
- * Checks if an HTML element is currently visible in the viewport.
- * @param element The HTML element to check.
- * @returns True if the element is visible, false otherwise.
- */
 const isElementVisible = (element: HTMLElement): boolean => {
   if (!element) return false;
   const style = window.getComputedStyle(element);
@@ -118,3 +115,39 @@ const isElementVisible = (element: HTMLElement): boolean => {
          element.offsetWidth > 0 && 
          element.offsetHeight > 0;
 };
+```typescript
+// src/main.tsx (or App.tsx - ensure this runs once at startup)
+import { createRoot } from 'react-dom/client'
+import App from './App.tsx'
+import './index.css'
+import * as pdfjsLib from 'pdfjs-dist';
+
+// Configure PDF.js worker globally
+const configurePdfWorker = async () => {
+  const localWorkerPath = '/pdf.worker.min.js'; // Path in your public folder
+  const cdnWorkerPath = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+  
+  try {
+    // Check if local worker is available (vite dev server or after build)
+    const response = await fetch(localWorkerPath, { method: 'HEAD' });
+    if (response.ok) {
+      console.log('Using local PDF.js worker from main.tsx');
+      pdfjsLib.GlobalWorkerOptions.workerSrc = localWorkerPath;
+      return;
+    }
+  } catch (e) {
+    console.warn('Local PDF.js worker not accessible, trying CDN from main.tsx.');
+  }
+  
+  console.log('Using CDN PDF.js worker from main.tsx');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = cdnWorkerPath;
+};
+
+configurePdfWorker().then(() => {
+  createRoot(document.getElementById("root")!).render(<App />);
+}).catch(error => {
+  console.error("Failed to configure PDF worker, application might not function correctly for PDFs:", error);
+  // Still render the app, but PDF functionality might be impaired.
+  createRoot(document.getElementById("root")!).render(<App />);
+});
+
